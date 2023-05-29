@@ -1,0 +1,5 @@
+lean_lemmas:
+  _target_: dpr.data.retriever_data.CsvCtxSrc
+  file: /home/jovyan/DPR/downloads/data/lean/all_lemmas.tsv
+  id_prefix: 'lean:'
+  

@@ -43,3 +43,12 @@ curatedtrec_train:
 curatedtrec_dev:
   _target_: dpr.data.biencoder_data.JsonQADataset
   file: data.retriever.curatedtrec-dev
+
+lean_questions_train:
+  _target_: dpr.data.biencoder_data.JsonQADataset
+  file: /home/jovyan/DPR/downloads/data/lean/lean-questions-train.json
+  
+lean_questions_dev:
+  _target_: dpr.data.biencoder_data.JsonQADataset
+  file: /home/jovyan/DPR/downloads/data/lean/lean-questions-dev.json
+  

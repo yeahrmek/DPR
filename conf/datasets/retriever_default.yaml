@@ -33,3 +33,10 @@ curatedtrec_test:
   _target_: dpr.data.retriever_data.CsvQASrc
   file: data.retriever.qas.curatedtrec-test
 
+lean_questions_train:
+  _target_: dpr.data.retriever_data.CsvQASrc
+  file: /home/jovyan/DPR/downloads/data/lean/lean-questions-train.csv
+  
+lean_questions_dev:
+  _target_: dpr.data.retriever_data.CsvQASrc
+  file: /home/jovyan/DPR/downloads/data/lean/lean-questions-dev.csv

@@ -19,12 +19,13 @@ from torch import nn
 
 
 if transformers.__version__.startswith("4"):
-    from transformers import BertConfig, BertModel
+    from transformers import BertConfig, BertModel, RobertaConfig, RobertaModel
     from transformers import AdamW
     from transformers import BertTokenizer
     from transformers import RobertaTokenizer
 else:
     from transformers.modeling_bert import BertConfig, BertModel
+    from transformers.modeling_roberta import RobertaModel, RobertaConfig
     from transformers.optimization import AdamW
     from transformers.tokenization_bert import BertTokenizer
     from transformers.tokenization_roberta import RobertaTokenizer
@@ -36,16 +37,16 @@ from .reader import Reader
 logger = logging.getLogger(__name__)
 
 
-def get_bert_biencoder_components(cfg, inference_only: bool = False, **kwargs):
+def get_hf_biencoder_components(cls, tensorizer_fn, cfg, inference_only: bool = False, **kwargs):
     dropout = cfg.encoder.dropout if hasattr(cfg.encoder, "dropout") else 0.0
-    question_encoder = HFBertEncoder.init_encoder(
+    question_encoder = cls.init_encoder(
         cfg.encoder.pretrained_model_cfg,
         projection_dim=cfg.encoder.projection_dim,
         dropout=dropout,
         pretrained=cfg.encoder.pretrained,
         **kwargs
     )
-    ctx_encoder = HFBertEncoder.init_encoder(
+    ctx_encoder = cls.init_encoder(
         cfg.encoder.pretrained_model_cfg,
         projection_dim=cfg.encoder.projection_dim,
         dropout=dropout,
@@ -67,8 +68,16 @@ def get_bert_biencoder_components(cfg, inference_only: bool = False, **kwargs):
         else None
     )
 
-    tensorizer = get_bert_tensorizer(cfg)
+    tensorizer = tensorizer_fn(cfg)
     return tensorizer, biencoder, optimizer
+
+
+def get_bert_biencoder_components(cfg, inference_only: bool = False, **kwargs):
+    return get_hf_biencoder_components(HFBertEncoder, get_bert_tensorizer, cfg, inference_only, **kwargs)
+
+
+def get_roberta_biencoder_components(cfg, inference_only: bool = False, **kwargs):
+    return get_hf_biencoder_components(HFRoBertaEncoder, get_roberta_tensorizer, cfg, inference_only, **kwargs)
 
 
 def get_bert_reader_components(cfg, inference_only: bool = False, **kwargs):
@@ -144,8 +153,13 @@ def _add_special_tokens(tokenizer, special_tokens):
     logger.info("all_special_tokens %s", tokenizer.all_special_tokens)
 
 
-def get_roberta_tensorizer(pretrained_model_cfg: str, do_lower_case: bool, sequence_length: int):
-    tokenizer = get_roberta_tokenizer(pretrained_model_cfg, do_lower_case=do_lower_case)
+def get_roberta_tensorizer(cfg):
+    sequence_length = cfg.encoder.sequence_length
+    pretrained_model_cfg = cfg.encoder.pretrained_model_cfg
+    tokenizer = get_roberta_tokenizer(pretrained_model_cfg, do_lower_case=cfg.do_lower_case)
+    if cfg.special_tokens:
+        _add_special_tokens(tokenizer, cfg.special_tokens)
+
     return RobertaTensorizer(tokenizer, sequence_length)
 
 
@@ -196,28 +210,7 @@ def get_roberta_tokenizer(pretrained_cfg_name: str, do_lower_case: bool = True):
     return RobertaTokenizer.from_pretrained(pretrained_cfg_name, do_lower_case=do_lower_case)
 
 
-class HFBertEncoder(BertModel):
-    def __init__(self, config, project_dim: int = 0):
-        BertModel.__init__(self, config)
-        assert config.hidden_size > 0, "Encoder hidden_size can't be zero"
-        self.encode_proj = nn.Linear(config.hidden_size, project_dim) if project_dim != 0 else None
-        self.init_weights()
-
-    @classmethod
-    def init_encoder(
-        cls, cfg_name: str, projection_dim: int = 0, dropout: float = 0.1, pretrained: bool = True, **kwargs
-    ) -> BertModel:
-        logger.info("Initializing HF BERT Encoder. cfg_name=%s", cfg_name)
-        cfg = BertConfig.from_pretrained(cfg_name if cfg_name else "bert-base-uncased")
-        if dropout != 0:
-            cfg.attention_probs_dropout_prob = dropout
-            cfg.hidden_dropout_prob = dropout
-
-        if pretrained:
-            return cls.from_pretrained(cfg_name, config=cfg, project_dim=projection_dim, **kwargs)
-        else:
-            return HFBertEncoder(cfg, project_dim=projection_dim)
-
+class ForwardMixin():
     def forward(
         self,
         input_ids: T,
@@ -270,6 +263,52 @@ class HFBertEncoder(BertModel):
         if self.encode_proj:
             return self.encode_proj.out_features
         return self.config.hidden_size
+
+
+class HFBertEncoder(ForwardMixin, BertModel):  # respect MRO
+    def __init__(self, config, project_dim: int = 0):
+        BertModel.__init__(self, config)
+        assert config.hidden_size > 0, "Encoder hidden_size can't be zero"
+        self.encode_proj = nn.Linear(config.hidden_size, project_dim) if project_dim != 0 else None
+        self.init_weights()
+
+    @classmethod
+    def init_encoder(
+        cls, cfg_name: str, projection_dim: int = 0, dropout: float = 0.1, pretrained: bool = True, **kwargs
+    ) -> BertModel:
+        logger.info("Initializing HF BERT Encoder. cfg_name=%s", cfg_name)
+        cfg = BertConfig.from_pretrained(cfg_name if cfg_name else "bert-base-uncased")
+        if dropout != 0:
+            cfg.attention_probs_dropout_prob = dropout
+            cfg.hidden_dropout_prob = dropout
+
+        if pretrained:
+            return cls.from_pretrained(cfg_name, config=cfg, project_dim=projection_dim, **kwargs)
+        else:
+            return HFBertEncoder(cfg, project_dim=projection_dim)
+
+
+class HFRoBertaEncoder(ForwardMixin, RobertaModel):
+    def __init__(self, config, project_dim: int = 0):
+        RobertaModel.__init__(self, config)
+        assert config.hidden_size > 0, "Encoder hidden_size can't be zero"
+        self.encode_proj = nn.Linear(config.hidden_size, project_dim) if project_dim != 0 else None
+        self.init_weights()
+
+    @classmethod
+    def init_encoder(
+        cls, cfg_name: str, projection_dim: int = 0, dropout: float = 0.1, pretrained: bool = True, **kwargs
+    ) -> RobertaModel:
+        logger.info(f"Initializing HF Roberta Encoder. cfg_name={cfg_name}")
+        cfg = RobertaConfig.from_pretrained(cfg_name if cfg_name else "roberta-base")
+        if dropout != 0:
+            cfg.attention_probs_dropout_prob = dropout
+            cfg.hidden_dropout_prob = dropout
+
+        if pretrained:
+            return cls.from_pretrained(cfg_name, config=cfg, project_dim=projection_dim, **kwargs)
+        else:
+            return HFRoBertaEncoder(cfg, project_dim=projection_dim)
 
 
 class BertTensorizer(Tensorizer):
@@ -341,4 +380,5 @@ class BertTensorizer(Tensorizer):
 
 class RobertaTensorizer(BertTensorizer):
     def __init__(self, tokenizer, max_length: int, pad_to_max: bool = True):
+        assert isinstance(tokenizer, RobertaTokenizer)
         super(RobertaTensorizer, self).__init__(tokenizer, max_length, pad_to_max=pad_to_max)
