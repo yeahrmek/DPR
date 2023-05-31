@@ -52,3 +52,12 @@ lean_questions_dev:
   _target_: dpr.data.biencoder_data.JsonQADataset
   file: /home/jovyan/DPR/downloads/data/lean/lean-questions-dev.json
   
+  
+lean_questions_no_none_train:
+  _target_: dpr.data.biencoder_data.JsonQADataset
+  file: /home/jovyan/DPR/downloads/data/lean/lean-questions-no-none-train.json
+  
+lean_questions_no_none_dev:
+  _target_: dpr.data.biencoder_data.JsonQADataset
+  file: /home/jovyan/DPR/downloads/data/lean/lean-questions-no-none-dev.json
+  
