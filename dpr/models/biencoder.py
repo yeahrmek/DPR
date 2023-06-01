@@ -163,6 +163,7 @@ class BiEncoder(nn.Module):
         """
         question_tensors = []
         ctx_tensors = []
+        ctx_passage_ids =[]
         positive_ctx_indices = []
         hard_neg_ctx_indices = []
 
@@ -192,6 +193,9 @@ class BiEncoder(nn.Module):
             hard_neg_ctxs = hard_neg_ctxs[0:num_hard_negatives]
 
             all_ctxs = [positive_ctx] + neg_ctxs + hard_neg_ctxs
+
+            assert len(all_ctxs) == 1
+
             hard_negatives_start_idx = 1
             hard_negatives_end_idx = 1 + len(hard_neg_ctxs)
 
@@ -201,6 +205,7 @@ class BiEncoder(nn.Module):
                 tensorizer.text_to_tensor(ctx.text, title=ctx.title if (insert_title and ctx.title) else None)
                 for ctx in all_ctxs
             ]
+            ctx_passage_ids.extend([ctx.passage_id for ctx in all_ctxs])
 
             ctx_tensors.extend(sample_ctxs_tensors)
             positive_ctx_indices.append(current_ctxs_len)
@@ -224,18 +229,34 @@ class BiEncoder(nn.Module):
             else:
                 question_tensors.append(tensorizer.text_to_tensor(question))
 
-        ctxs_tensor = torch.cat([ctx.view(1, -1) for ctx in ctx_tensors], dim=0)
         questions_tensor = torch.cat([q.view(1, -1) for q in question_tensors], dim=0)
 
+
+        # remove duplicate ctxs_tensors and create mapping from q id to ctx id
+        unique_passage_ids = {}
+        ctx_tensors_unique = []
+        q_to_ctx_map = []
+        j = 0
+        for i, passage_id in enumerate(ctx_passage_ids):
+            if not passage_id in unique_passage_ids:
+                unique_passage_ids[passage_id] = j
+                q_to_ctx_map.append(j)
+                j += 1
+                ctx_tensors_unique.append(ctx_tensors[i])
+            else:
+                q_to_ctx_map.append(unique_passage_ids[passage_id])
+
+        ctxs_tensor = torch.cat([ctx.view(1, -1) for ctx in ctx_tensors_unique], dim=0)
         ctx_segments = torch.zeros_like(ctxs_tensor)
         question_segments = torch.zeros_like(questions_tensor)
+        q_to_ctx_map = torch.LongTensor(q_to_ctx_map)
 
         return BiEncoderBatch(
             questions_tensor,
             question_segments,
             ctxs_tensor,
             ctx_segments,
-            positive_ctx_indices,
+            q_to_ctx_map,
             hard_neg_ctx_indices,
             "question",
         )

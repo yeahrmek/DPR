@@ -13,7 +13,7 @@ from dpr.data.tables import Table
 from dpr.utils.data_utils import read_data_from_json_files, Dataset
 
 logger = logging.getLogger(__name__)
-BiEncoderPassage = collections.namedtuple("BiEncoderPassage", ["text", "title"])
+BiEncoderPassage = collections.namedtuple("BiEncoderPassage", ["text", "title", "passage_id"])
 
 
 def get_dpr_files(source_name) -> List[str]:
@@ -100,6 +100,7 @@ class JsonQADataset(Dataset):
             return BiEncoderPassage(
                 normalize_passage(ctx["text"]) if self.normalize else ctx["text"],
                 ctx["title"],
+                ctx["passage_id"]
             )
 
         r.positive_passages = [create_passage(ctx) for ctx in positive_ctxs]
